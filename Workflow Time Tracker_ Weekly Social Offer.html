@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Workflow Time Tracker</title>
+<style>
+:root{--bg:#f6f1e8;--card:#fffaf0;--ink:#1f2a37;--muted:#5b6673;--accent:#0b6e70;--accent-ink:#f6f1e8;--line:#d9d0c0;--gold:#8a5a00;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#161d26;--card:#1f2a37;--ink:#f1ece2;--muted:#a9b3bf;--accent:#3fbfc1;--accent-ink:#0b1a1a;--line:#34414f;--gold:#f2a541;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#161d26;--card:#1f2a37;--ink:#f1ece2;--muted:#a9b3bf;--accent:#3fbfc1;--accent-ink:#0b1a1a;--line:#34414f;--gold:#f2a541;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Inter,system-ui,sans-serif}
+main{max-width:680px;margin:0 auto;padding:24px 16px 48px}
+h1{font:700 26px/1.2 "Space Grotesk",Inter,system-ui,sans-serif;margin:0 0 4px}
+.sub{color:var(--muted);margin:0 0 16px}
+.modes{display:flex;gap:8px;margin-bottom:16px}
+.modes button{flex:1}
+button{padding:11px 14px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);font:600 15px Inter,system-ui,sans-serif;cursor:pointer}
+button[aria-pressed="true"],button.go{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.row{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px}
+.name{font-weight:600;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.tag{font-size:12px;font-weight:600;border:1px solid var(--line);border-radius:99px;padding:1px 8px;color:var(--muted)}
+.tag.ai{color:var(--accent);border-color:var(--accent)}
+.f{display:flex;gap:8px;margin-top:8px;align-items:end;flex-wrap:wrap}
+.f label{font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:2px}
+.f input{width:84px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit}
+.f button{margin-left:auto;min-width:130px}
+#tot{background:var(--card);border:2px solid var(--accent);border-radius:12px;padding:14px 16px;margin:16px 0;font-weight:600}
+#tot small{display:block;font-weight:400;color:var(--muted);margin-top:4px}
+textarea{width:100%;height:150px;margin-top:10px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font:13px/1.4 ui-monospace,Menlo,monospace}
+.acts{display:flex;gap:8px}.acts button{flex:1}
+</style>
+</head>
+<body>
+<main>
+<h1>Workflow time tracker</h1>
+<p class="sub">Weekly social offer. Run the workflow by hand and record <b>Before</b>, then run it with AI and record <b>After</b>. Use the timer or type minutes.</p>
+<div class="modes">
+<button id="mb" type="button" aria-pressed="true">Timing: Before (by hand)</button>
+<button id="ma" type="button" aria-pressed="false">Timing: After (with AI)</button>
+</div>
+<div id="rows"></div>
+<div id="tot"></div>
+<div class="acts"><button id="copy" class="go" type="button">Make summary</button><button id="reset" type="button">Clear all</button></div>
+<textarea id="sum" readonly aria-label="Summary" placeholder="Your summary appears here"></textarea>
+</main>
+<script>
+var STEPS=[["Decide the offer","human"],["Check facts and prices","human"],["Write the caption","ai"],["Hashtags, alt text, other channels","ai"],["Take or make the image","human"],["Review and approve","human"],["Schedule and post","tool"],["Answer comments and DMs","ai"],["Check results, note lessons","ai"]];
+var TAG={ai:"AI fits",human:"Human",tool:"Tool"};
+var S={mode:"before",run:null,t:null,rows:STEPS.map(function(s){return{n:s[0],k:s[1],b:"",a:""}})};
+try{var sv=JSON.parse(localStorage.getItem("wf1")||"null");if(sv&&sv.rows&&sv.rows.length===STEPS.length)S.rows=sv.rows}catch(e){}
+function save(){try{localStorage.setItem("wf1",JSON.stringify({rows:S.rows}))}catch(e){}}
+function num(v){var x=parseFloat(v);return isNaN(x)?0:x}
+function fmt(x){return(Math.round(x*10)/10).toString()}
+function mk(tag,cls,txt){var e=document.createElement(tag);if(cls)e.className=cls;if(txt)e.textContent=txt;return e}
+function stop(){
+  if(S.run===null)return;
+  var f=S.mode==="before"?"b":"a",m=(Date.now()-S.t)/60000;
+  S.rows[S.run][f]=fmt(num(S.rows[S.run][f])+m);
+  S.run=null;clearInterval(S.iv);save();render();
+}
+function totals(){
+  var tb=0,ta=0,n=0;
+  S.rows.forEach(function(r){if(r.b!==""&&r.a!==""){tb+=num(r.b);ta+=num(r.a);n++}});
+  var d=tb-ta,p=tb?Math.round(d/tb*100):0;
+  return{tb:tb,ta:ta,n:n,d:d,p:p};
+}
+function showTot(){
+  var t=totals(),el=document.getElementById("tot");
+  el.textContent="";
+  if(!t.n){el.textContent="Fill in Before and After for at least one step to see the comparison.";return}
+  el.append("Before "+fmt(t.tb)+" min · After "+fmt(t.ta)+" min · "+(t.d>=0?"Saved ":"Added ")+fmt(Math.abs(t.d))+" min ("+Math.abs(t.p)+"%)");
+  el.append(mk("small","","Compared on "+t.n+" of "+S.rows.length+" steps, only those with both numbers."));
+}
+function render(){
+  document.getElementById("mb").setAttribute("aria-pressed",S.mode==="before");
+  document.getElementById("ma").setAttribute("aria-pressed",S.mode==="after");
+  var box=document.getElementById("rows");box.textContent="";
+  S.rows.forEach(function(r,i){
+    var d=mk("div","row"),nm=mk("div","name",(i+1)+". "+r.n);
+    nm.append(mk("span","tag "+(r.k==="ai"?"ai":""),TAG[r.k]));
+    var f=mk("div","f");
+    [["Before (min)","b"],["After (min)","a"]].forEach(function(p){
+      var l=mk("label","",p[0]),inp=mk("input");
+      inp.type="number";inp.min="0";inp.step="0.1";inp.inputMode="decimal";inp.value=r[p[1]];
+      inp.addEventListener("input",function(){r[p[1]]=inp.value;save();showTot()});
+      l.append(inp);f.append(l);
+    });
+    var b=mk("button","",S.run===i?"Stop":"Start timer");b.type="button";b.id="t"+i;
+    if(S.run===i)b.className="go";
+    b.addEventListener("click",function(){
+      if(S.run===i){stop();return}
+      stop();S.run=i;S.t=Date.now();
+      S.iv=setInterval(tick,1000);render();
+    });
+    f.append(b);d.append(nm,f);box.append(d);
+  });
+  showTot();
+}
+function tick(){
+  if(S.run===null)return;
+  var s=Math.floor((Date.now()-S.t)/1000),b=document.getElementById("t"+S.run);
+  if(b)b.textContent="Stop "+Math.floor(s/60)+":"+("0"+(s%60)).slice(-2);
+}
+document.getElementById("mb").addEventListener("click",function(){stop();S.mode="before";render()});
+document.getElementById("ma").addEventListener("click",function(){stop();S.mode="after";render()});
+document.getElementById("reset").addEventListener("click",function(){
+  if(!window.confirm("Clear all times?"))return;
+  stop();S.rows.forEach(function(r){r.b="";r.a=""});save();render();document.getElementById("sum").value="";
+});
+document.getElementById("copy").addEventListener("click",function(){
+  stop();
+  var t=totals(),L=["Weekly social offer: before/after (minutes)"];
+  S.rows.forEach(function(r,i){L.push((i+1)+". "+r.n+" ["+TAG[r.k]+"]: "+(r.b||"-")+" -> "+(r.a||"-"))});
+  L.push("Compared steps: "+t.n+". Before "+fmt(t.tb)+", after "+fmt(t.ta)+", difference "+fmt(t.d)+" ("+t.p+"%).");
+  var ta=document.getElementById("sum");ta.value=L.join("\n");ta.select();
+  try{if(navigator.clipboard)navigator.clipboard.writeText(ta.value).catch(function(){})}catch(e){}
+});
+render();
+</script>
+</body>
+</html>
